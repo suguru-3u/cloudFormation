@@ -1,0 +1,162 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# テンプレートに関する記述
+Description: "Create EC2"
+# 入力パラメータ
+Parameters:
+  TagKey:
+    Description: "作成日時を記載する"
+    Type: String
+# 構築するリソースの記述
+AWSTemplateFormatVersion: 2010-09-09
+Description: Network_Layer Template
+
+Resources:
+  #=================================
+  # VPCの作成
+  #=================================
+  # 論理ID,このファイルの中で一意である必要がある
+  tpVPC:
+    # AWSのサービスを宣言する。
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      # DNS機能： 有効
+      EnableDnsSupport: "true"
+      # DNS名割り当て： 有効
+      EnableDnsHostnames: "true"
+      Tags:
+        - Key: !Ref TagKey
+          Value: techpit
+  #=================================
+  # インターネットゲートウェイの作成
+  #=================================
+  tpInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: !Ref TagKey
+          Value: techpit
+
+  tpAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref tpInternetGateway
+      VpcId: !Ref tpVPC
+
+  #=================================
+  # サブネットの作成
+  #=================================
+  tpPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: "ap-northeast-1a"
+      CidrBlock: 10.0.0.0/24
+      Tags:
+        - Key: !Ref TagKey
+          Value: subnet01a
+      # VPCとの紐づけを行っている
+      # 組み込み関数 Ref は、指定したパラメータまたはリソースの値を返します。
+      VpcId: !Ref tpVPC
+  #=================================
+  # ルートテーブルの作成
+  #=================================
+  # ルートテーブルの作成
+  tpRouteTable01:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: !Ref TagKey
+          Value: techpit01
+      VpcId: !Ref tpVPC
+
+  # サブネットをルートテーブルに関連付けます。
+  tpRouteTableAssociation01a:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref tpRouteTable01
+      SubnetId: !Ref tpPublicSubnet
+
+  # ルートテーブルのルートを設定します。
+  tpRoute01:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref tpInternetGateway
+      RouteTableId: !Ref tpRouteTable01
+
+  #=================================
+  # セキュリティグループの作成
+  #=================================
+  tpSShSecurityeGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # セキュリティグループの説明(必須)
+      GroupDescription: "ssh"
+      # セキュリティグループの名前(必須ではない)
+      GroupName: ssh
+      # セキュリティ グループに関連付けられたアウトバウンド ルール(必須ではない)
+      # SecurityGroupEgress:
+      #   - Egress
+      # セキュリティ グループに関連付けられた受信規則(必須ではない)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      # セキュリティ グループに割り当てられたすべてのタグ。(必須ではない)
+      # Tags:
+      # - Tag
+      # セキュリティ グループの VPC の ID。(必須ではない)
+      VpcId: !Ref tpVPC
+
+  tpHttpSecurityeGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      # セキュリティグループの説明(必須)
+      GroupDescription: "http"
+      # セキュリティグループの名前(必須ではない)
+      GroupName: http
+      # セキュリティ グループに関連付けられたアウトバウンド ルール(必須ではない)
+      # SecurityGroupEgress:
+      #   - Egress
+      # セキュリティ グループに関連付けられた受信規則(必須ではない)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      # セキュリティ グループに割り当てられたすべてのタグ。(必須ではない)
+      # Tags:
+      # - Tag
+      # セキュリティ グループの VPC の ID。(必須ではない)
+      VpcId: !Ref tpVPC
+
+  #=================================
+  # EC2の作成
+  #=================================
+  # MyEC2Instanceという新しいリソースを作成する
+  MyEC2Instance:
+    # MyEC2InstanceのリソースのタイプはAWS::EC2::Instance（EC2インタンス）にする
+    Type: AWS::EC2::Instance
+    Properties:
+      # MyEC2InstanceのAMIはami-0e4a9ad2eb120e054にする
+      ImageId: ami-078296f82eb463377
+      KeyName: 20221004
+      # MyEC2Instanceのインスタンスタイプはt2.microにする
+      InstanceType: t2.micro
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: "true"
+          DeviceIndex: "0"
+          SubnetId: !Ref tpPublicSubnet
+          GroupSet:
+            - !Ref tpSShSecurityeGroup
+            - !Ref tpHttpSecurityeGroup
+      UserData: !Base64 |
+        #!/bin/bash
+        yum update -y
+        yum install -y httpd
+        systemctl start httpd
+        systemctl enable httpd
+
+# 出力パラメータ
+# Outputs:
